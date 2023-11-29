@@ -1,0 +1,15 @@
+# backend/Dockerfile.dev
+FROM golang:1.21
+
+WORKDIR /app
+
+RUN go mod init backend || echo "Module already initialized"
+
+RUN GO111MODULE=off go get github.com/pilu/fresh
+
+COPY . .
+
+# RUN go get github.com/gin-gonic/gin@latest
+# RUN go get github.com/gin-contrib/cors@latest
+
+CMD ["fresh"]
