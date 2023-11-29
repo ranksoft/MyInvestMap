@@ -44,11 +44,11 @@ function AssetTable() {
   };
 
   const getName = (asset) => {
-    return asset.name || 'N/A';
+    return asset.name.Valid ? asset.name.String : 'N/A';
   };
-
+  
   const getCurrentPrice = (asset) => {
-    return asset.сurrentPrice || 'N/A';
+    return asset.currentPrice.Valid ? asset.currentPrice.Float64 : 0;
   };
   
   const calculateInvestment = (asset) => {
@@ -56,7 +56,10 @@ function AssetTable() {
   };
 
   const calculateProfitOrLoss = (asset) => {
-      const currentPrice = (asset.сurrentPrice || 0);
+      const currentPrice = getCurrentPrice(asset);
+      if (!currentPrice) {
+        return 0;
+      }
       let currentTotal = currentPrice * asset.quantity;
       let initialTotal = asset.price * asset.quantity;
       return currentTotal - initialTotal;
@@ -75,7 +78,11 @@ function AssetTable() {
       if (!asset.isPurchase) {
         return total;
       }
-      const currentPrice = parseFloat(asset.сurrentPrice || 0);
+
+      const currentPrice = parseFloat(getCurrentPrice(asset));
+      if (!currentPrice) {
+        return 0;
+      }
       const assetQuantity = parseFloat(asset.quantity);
       const assetPrice = parseFloat(asset.price);
       const profitOrLoss = (currentPrice - assetPrice) * assetQuantity;
