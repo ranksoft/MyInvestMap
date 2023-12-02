@@ -6,7 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"myinvestmap/models"
 	"net/http"
@@ -41,8 +41,29 @@ func AddAsset(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var symbols []string
+	symbols = append(symbols, newAsset.StockTag)
+	updateStockData(db, symbols)
+
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(newAsset)
+}
+
+type updateStockRequest struct {
+	Symbols []string `json:"symbols"`
+}
+
+func UpdateSelectedAssets(db *sql.DB, w http.ResponseWriter, r *http.Request) {
+	var updateStockRequest updateStockRequest
+	if err := json.NewDecoder(r.Body).Decode(&updateStockRequest); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	updateStockData(db, updateStockRequest.Symbols)
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
 
 func SellAsset(db *sql.DB, w http.ResponseWriter, r *http.Request) {
@@ -67,6 +88,10 @@ func SellAsset(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	var symbols []string
+	symbols = append(symbols, soldAsset.StockTag)
+	updateStockData(db, symbols)
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(soldAsset)
@@ -111,7 +136,6 @@ func updateStockDataIfNeeded(db *sql.DB) {
 		return
 	}
 
-	// Преобразование строки в time.Time
 	lastUpdate, err := time.Parse("2006-01-02 15:04:05", lastUpdateStr)
 	if err != nil {
 		log.Println("Error parsing last update time:", err)
@@ -154,10 +178,12 @@ func updateStockData(db *sql.DB, symbols []string) {
 	}
 
 	for _, data := range stockData {
-		updateSQL := `UPDATE assets SET name = ?, currentPrice = ?, updatedAt = CURRENT_TIMESTAMP WHERE stockTag = ?`
-		_, err := db.Exec(updateSQL, data.Name, data.Price, data.Symbol)
-		if err != nil {
-			log.Println("Error updating asset in database:", err)
+		if data.Price != "" {
+			updateSQL := `UPDATE assets SET name = ?, currentPrice = ?, updatedAt = CURRENT_TIMESTAMP WHERE stockTag = ?`
+			_, err := db.Exec(updateSQL, data.Name, data.Price, data.Symbol)
+			if err != nil {
+				log.Println("Error updating asset in database:", err)
+			}
 		}
 	}
 }
@@ -169,7 +195,7 @@ type StockQuote struct {
 }
 
 func fetchStockDataFromAPI(symbols []string) ([]StockQuote, error) {
-	os.Setenv("TWELVE_DATA_API_KEY", "")
+	os.Setenv("TWELVE_DATA_API_KEY", "787c4fb248684543a7f466c8d5214a93")
 	if len(symbols) == 0 {
 		return nil, nil
 	}
@@ -189,7 +215,7 @@ func fetchStockDataFromAPI(symbols []string) ([]StockQuote, error) {
 		return nil, fmt.Errorf("API returned non-OK status: %s", resp.Status)
 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("Error reading response body: %v", err)
 	}
@@ -261,6 +287,10 @@ func UpdateAsset(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	var symbols []string
+	symbols = append(symbols, updatedAsset.StockTag)
+	updateStockData(db, symbols)
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(updatedAsset)

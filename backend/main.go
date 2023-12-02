@@ -18,6 +18,10 @@ func main() {
 
 	// r.HandleFunc("/api/stocks", handlers.GetBatchStockData).Methods("GET")
 
+	r.HandleFunc("/api/refresh-assets", func(w http.ResponseWriter, r *http.Request) {
+		handlers.UpdateSelectedAssets(db, w, r)
+	}).Methods("POST")
+
 	r.HandleFunc("/api/assets/add", func(w http.ResponseWriter, r *http.Request) {
 		handlers.AddAsset(db, w, r)
 	}).Methods("POST")
