@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import React, { useState, useEffect, useCallback} from 'react';
 import AddAssetForm from './AddAssetForm';
 import SellAssetForm from './SellAssetForm';
 import EditAssetModal from './EditAssetModal';
+import ApiKeyForm from './ApiKeyForm';
 import { Table } from 'react-bootstrap';
+import { getAssetsApi, deleteAssetApi, refreshAssetsApi } from '../services/api';
 
 function AssetTable() {
   const [assets, setAssets] = useState([]);
@@ -46,7 +47,7 @@ function AssetTable() {
     const selectedSymbols = assets.filter(asset => selectedAssets.has(asset.id)).map(asset => asset.stockTag);
     if (selectedSymbols.length > 0) {
       const symbolsToUpdate = selectedSymbols.slice(0, 8);
-      axios.post(`${process.env.REACT_APP_BACKEND_URL}/api/refresh-assets`, {
+      refreshAssetsApi({
         symbols: symbolsToUpdate
       })
       .then(response => {
@@ -58,27 +59,27 @@ function AssetTable() {
     }
   }
 
-  const fetchAssets = () => {
-    axios.get(`${process.env.REACT_APP_BACKEND_URL}/api/assets`)
-      .then(response => {
-        setAssets(response.data);
-      })
-      .catch(error => console.error('Error fetching assets:', error));
-      console.log(assets);
-  };
- 
-  useEffect(() => {
-    fetchAssets();
-    const interval = setInterval(fetchAssets, 180000); 
-    return () => clearInterval(interval); 
+  const fetchAssets = useCallback(() => {
+    getAssetsApi()
+    .then(response => {
+      setAssets(response.data);
+    })
+    .catch(error => console.error('Error fetching assets:', error));
+    console.log(assets);
   }, []);
 
+  useEffect(() => {
+    fetchAssets();
+    // const interval = setInterval(fetchAssets, 180000); 
+    // return () => clearInterval(interval); 
+  }, [fetchAssets]);
+
   const deleteAsset = (id) => {
-    axios.delete(`${process.env.REACT_APP_BACKEND_URL}/api/assets/delete/${id}`)
-      .then(response => {
-        fetchAssets();
-      })
-      .catch(error => console.error('Error deleting asset:', error));
+    deleteAssetApi(id)
+    .then(response => {
+      fetchAssets();
+    })
+    .catch(error => console.error('Error deleting asset:', error));
   };
 
   const getName = (asset) => {
@@ -148,6 +149,7 @@ function AssetTable() {
 
   return (
     <div className="container mt-4">
+    <ApiKeyForm />
     <h2 className="mb-4">MyInvestMap Portfolio</h2>
     <AddAssetForm onAssetAdded={fetchAssets} />
     <SellAssetForm onAssetSold={fetchAssets} />

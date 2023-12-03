@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import { Modal, Button, Form, Alert } from 'react-bootstrap';
+import { addAssetApi } from '../services/api';
 
 function AddAssetForm({ onAssetAdded }) {
   const [asset, setAsset] = useState({ stockTag: '', exchange: '', price: 0, quantity: 0 });
@@ -29,17 +29,17 @@ function AddAssetForm({ onAssetAdded }) {
     event.preventDefault();
     asset.price = parseFloat(asset.price);
     asset.quantity = parseFloat(asset.quantity);
-    axios.post(`${process.env.REACT_APP_BACKEND_URL}/api/assets/add`, asset)
-        .then(response => {
-            onAssetAdded();
-            setShowModal(false);
-            setAsset({ stockTag: '', exchange: '', price: '', quantity: '' });
-            setNotification({ message: 'Asset added successfully!', type: 'success' });
-        })
-        .catch(error => {
-            console.error('Error adding asset:', error);
-            setNotification({ message: 'Error adding asset. Please try again.', type: 'danger' });
-        });
+    addAssetApi(asset)
+    .then(response => {
+      onAssetAdded();
+      setShowModal(false);
+      setAsset({ stockTag: '', exchange: '', price: '', quantity: '' });
+      setNotification({ message: 'Asset added successfully!', type: 'success' });
+    })
+    .catch(error => {
+        console.error('Error adding asset:', error);
+        setNotification({ message: 'Error adding asset. Please try again.', type: 'danger' });
+    });
   };
 
   return (

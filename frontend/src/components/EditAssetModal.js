@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Modal, Button, Form, Alert } from 'react-bootstrap';
-import axios from 'axios';
+import { updateAssetApi } from '../services/api';
 
 function EditAssetModal({ show, handleClose, asset, onAssetUpdated }) {
   const [updatedAsset, setUpdatedAsset] = useState({ ...asset });
@@ -31,15 +31,15 @@ function EditAssetModal({ show, handleClose, asset, onAssetUpdated }) {
   const handleSubmit = () => {
     updatedAsset.price = parseFloat(updatedAsset.price);
     updatedAsset.quantity = parseFloat(updatedAsset.quantity);
-    axios.put(`${process.env.REACT_APP_BACKEND_URL}/api/assets/update/${asset.id}`, updatedAsset)
-      .then(response => {
-        onAssetUpdated();
-        handleClose();
-        setNotification({ message: 'Asset updating successfully!', type: 'success' });
-      })
-      .catch(error => {
-        console.error('Error updating asset', error);
-        setNotification({ message: 'Error updating asset. Please try again.', type: 'danger' });
+    updateAssetApi(asset.id, updatedAsset)
+    .then(response => {
+      onAssetUpdated();
+      handleClose();
+      setNotification({ message: 'Asset updating successfully!', type: 'success' });
+    })
+    .catch(error => {
+      console.error('Error updating asset', error);
+      setNotification({ message: 'Error updating asset. Please try again.', type: 'danger' });
     });
   };
 

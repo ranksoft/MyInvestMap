@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import { Modal, Button, Form, Alert } from 'react-bootstrap';
+import { addSellAssetApi } from '../services/api';
 
 function SellAssetForm({ onAssetSold }) {
   const [asset, setAsset] = useState({ stockTag: '', exchange: '', price: 0, quantity: 0 });
@@ -29,17 +29,17 @@ function SellAssetForm({ onAssetSold }) {
     asset.price = parseFloat(asset.price);
     asset.quantity = parseFloat(asset.quantity);
     event.preventDefault();
-    axios.post(`${process.env.REACT_APP_BACKEND_URL}/api/assets/sell`, asset)
-        .then(response => {
-            onAssetSold();
-            setShowModal(false);
-            setAsset({ stockTag: '', exchange: '', price: '', quantity: '' });
-            setNotification({ message: 'Asset sold successfully!', type: 'success' });
-        })
-        .catch(error => {
-            console.error('Error selling asset:', error);
-            setNotification({ message: 'Error selling asset. Please try again.', type: 'danger' });
-        });
+    addSellAssetApi(asset)
+    .then(response => {
+        onAssetSold();
+        setShowModal(false);
+        setAsset({ stockTag: '', exchange: '', price: '', quantity: '' });
+        setNotification({ message: 'Asset sold successfully!', type: 'success' });
+    })
+    .catch(error => {
+        console.error('Error selling asset:', error);
+        setNotification({ message: 'Error selling asset. Please try again.', type: 'danger' });
+    });
   };
 
   return (
