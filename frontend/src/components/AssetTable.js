@@ -11,6 +11,7 @@ function AssetTable() {
   const [editingAsset, setEditingAsset] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedAssets, setSelectedAssets] = useState(new Set());
+  const [errorMessage, setErrorMessage] = useState('');
 
   const handleEdit = (asset) => {
     setEditingAsset(asset);
@@ -55,7 +56,16 @@ function AssetTable() {
         fetchAssets();
         setSelectedAssets(new Set())
       })
-      .catch(error => console.error('Error updating assets:', error));
+      .catch(error => () => {
+        if (error.message) {
+          let errorMessage = error.message || 'Error occurred updating assets';
+          setErrorMessage('Error updating assets: ' + errorMessage);
+          console.error('Error updating assets:', errorMessage);
+      } else {
+          setErrorMessage('Error updating assets: An unexpected error occurred');
+          console.error('Error updating assets:', error);
+      }
+      });
     }
   }
 
@@ -64,8 +74,16 @@ function AssetTable() {
     .then(response => {
       setAssets(response.data);
     })
-    .catch(error => console.error('Error fetching assets:', error));
-    console.log(assets);
+    .catch(error => () => {
+      if (error.message) {
+        let errorMessage = error.message || 'Error occurred fetching assets';
+        setErrorMessage('Error fetching assets: ' + errorMessage);
+        console.error('Error fetching assets:', errorMessage);
+    } else {
+        setErrorMessage('Error fetching assets: An unexpected error occurred');
+        console.error('Error fetching assets:', error);
+    }
+    });
   }, []);
 
   useEffect(() => {
@@ -79,7 +97,16 @@ function AssetTable() {
     .then(response => {
       fetchAssets();
     })
-    .catch(error => console.error('Error deleting asset:', error));
+    .catch(error => () => {
+      if (error.message) {
+        let errorMessage = error.message || 'Error occurred deleting assets';
+        setErrorMessage('Error deleting assets: ' + errorMessage);
+        console.error('Error deleting assets:', errorMessage);
+    } else {
+        setErrorMessage('Error deleting assets: An unexpected error occurred');
+        console.error('Error deleting assets:', error);
+    }
+    });
   };
 
   const getName = (asset) => {
@@ -99,6 +126,7 @@ function AssetTable() {
       if (!currentPrice) {
         return 0;
       }
+
       let currentTotal = currentPrice * asset.quantity;
       let initialTotal = asset.price * asset.quantity;
       return currentTotal - initialTotal;
@@ -112,23 +140,23 @@ function AssetTable() {
     return assets?.reduce((total, asset) => {
       const assetQuantity = parseFloat(asset.quantity);
       const assetPrice = parseFloat(asset.price);
-      return asset.isPurchase ? total + (assetPrice * assetQuantity) : total;
+      return asset.isPurchase ? total + (assetPrice * assetQuantity) : total - (assetPrice * assetQuantity);
     }, 0).toFixed(4);
   };
   
   const calculateTotalProfitLoss = () => {
     return assets?.reduce((total, asset) => {
-      if (!asset.isPurchase) {
-        return total;
-      }
 
       const currentPrice = parseFloat(getCurrentPrice(asset));
       if (!currentPrice) {
-        return 0;
+        return total + 0;
       }
       const assetQuantity = parseFloat(asset.quantity);
       const assetPrice = parseFloat(asset.price);
       const profitOrLoss = (currentPrice - assetPrice) * assetQuantity;
+      if (!asset.isPurchase) {
+        return total - calculateProfitOrLoss(asset);
+      }
       return total + profitOrLoss;
     }, 0).toFixed(4);
   };
@@ -149,10 +177,14 @@ function AssetTable() {
 
   return (
     <div className="container mt-4">
+    {errorMessage && <div className="alert alert-danger">{errorMessage}</div>}
     <ApiKeyForm />
     <h2 className="mb-4">MyInvestMap Portfolio</h2>
-    <AddAssetForm onAssetAdded={fetchAssets} />
-    <SellAssetForm onAssetSold={fetchAssets} />
+
+    <div className="d-flex justify-content-between mb-4">
+      <AddAssetForm onAssetAdded={fetchAssets} />
+      <SellAssetForm onAssetSold={fetchAssets} />
+    </div>
     <Table striped bordered hover responsive="lg">
       <thead className="bg-light">
         <tr>

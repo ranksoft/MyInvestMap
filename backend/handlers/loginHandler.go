@@ -1,3 +1,5 @@
+// /backend/handlers/loginHandler.go
+
 package handlers
 
 import (
@@ -8,42 +10,36 @@ import (
 	"os"
 	"time"
 
-	jwt "github.com/dgrijalva/jwt-go"
+	"github.com/dgrijalva/jwt-go"
 	"golang.org/x/crypto/bcrypt"
 )
 
-var jwtKey = []byte(os.Getenv("YOUR_SECRET_KEY"))
+const (
+	selectUserSQL = `SELECT id, password FROM users WHERE email = ?`
+)
 
-type Credentials struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-}
-
-type TokenResponse struct {
-	Token string `json:"token"`
-}
+var jwtKey = []byte(os.Getenv("AUTH_SECRET_KEY"))
 
 func LoginHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
-	var creds Credentials
+	var creds models.Credentials
 	if err := json.NewDecoder(r.Body).Decode(&creds); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	var hashedPassword string
 	var userID int
-	row := db.QueryRow("SELECT id, password FROM users WHERE email = ?", creds.Email)
-	if err := row.Scan(&userID, &hashedPassword); err != nil {
+	var hashedPassword string
+	if err := db.QueryRow(selectUserSQL, creds.Email).Scan(&userID, &hashedPassword); err != nil {
 		if err == sql.ErrNoRows {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
+			http.Error(w, "User not found", http.StatusUnauthorized)
+		} else {
+			http.Error(w, "Database error", http.StatusInternalServerError)
 		}
-		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(creds.Password)); err != nil {
-		w.WriteHeader(http.StatusUnauthorized)
+		http.Error(w, "Invalid password", http.StatusUnauthorized)
 		return
 	}
 
@@ -58,16 +54,17 @@ func LoginHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := token.SignedString(jwtKey)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
+		http.Error(w, "Failed to create token", http.StatusInternalServerError)
 		return
 	}
 
-	response := TokenResponse{Token: tokenString}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	json.NewEncoder(w).Encode(models.TokenResponse{Token: tokenString})
 }
 
 func LogoutHandler(w http.ResponseWriter, r *http.Request) {
+	response := map[string]string{"message": "Logged out successfully"}
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Logged out successfully"))
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }

@@ -6,7 +6,6 @@ const notSecureinstance = axios.create({
 });
 
 const loginApi = (data) => {
-    console.log(data);
     return notSecureinstance.post('/api/login', data);
 };
 

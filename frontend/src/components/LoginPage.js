@@ -4,6 +4,7 @@ import { loginApi } from '../services/api';
 function LoginPage({ onLoginSuccess }) {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [errorMessage, setErrorMessage] = useState('');
 
     const handleLogin = async (e) => {
         e.preventDefault();
@@ -11,7 +12,14 @@ function LoginPage({ onLoginSuccess }) {
             const response = await loginApi({ email, password });
             onLoginSuccess(response.data.token);
         } catch (error) {
-            console.error('Login error:', error.response.data);
+            if (error.message) {
+                let errorMessage = error.message || 'Error occurred during login';
+                setErrorMessage('Login error: ' + errorMessage);
+                console.error('Login error:', errorMessage);
+            } else {
+                setErrorMessage('Login error: An unexpected error occurred');
+                console.error('Login error:', error);
+            }
         }
     };
 
@@ -31,6 +39,7 @@ function LoginPage({ onLoginSuccess }) {
                     <label htmlFor="password" className="form-label">Password</label>
                     <input type="password" className="form-control" id="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} />
                     </div>
+                    {errorMessage && <div className="alert alert-danger">{errorMessage}</div>}
                     <button type="submit" className="btn btn-primary" onClick={handleLogin}>Login</button>
                 </form>
                 </div>

@@ -5,13 +5,23 @@ function RegisterPage({ onRegisterSuccess }) {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [username, setUsername] = useState('');
+    const [errorMessage, setErrorMessage] = useState('');
 
-    const handleRegister = async () => {
+    const handleRegister = async (e) => {
+        e.preventDefault();
         try {
             const response = await registerApi({ email, password, username });
             onRegisterSuccess(response.data.message);
         } catch (error) {
-            console.error('Register error:', error.response.data);
+            console.log(error);
+            if (error.message) {
+                let errorMessage = error.message || 'Error occurred during register';
+                setErrorMessage('Register error: ' + errorMessage);
+                console.error('Register error:', errorMessage);
+            } else {
+                setErrorMessage('Register error: An unexpected error occurred');
+                console.error('Register error:', error);
+            }
         }
     };
 
@@ -35,6 +45,7 @@ function RegisterPage({ onRegisterSuccess }) {
                     <label htmlFor="password" className="form-label">Password</label>
                     <input type="password" className="form-control" id="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} />
                     </div>
+                    {errorMessage && <div className="alert alert-danger">{errorMessage}</div>}
                     <button type="submit" className="btn btn-success" onClick={handleRegister}>Register</button>
                 </form>
                 </div>

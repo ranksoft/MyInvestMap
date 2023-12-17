@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"myinvestmap/models"
 	"net/http"
 	"strconv"
@@ -17,103 +16,112 @@ import (
 	"github.com/gorilla/mux"
 )
 
-func AddAsset(db *sql.DB, w http.ResponseWriter, r *http.Request) {
-	userClaims := r.Context().Value("userClaims").(*models.Claims)
-	userID := userClaims.UserID
+const (
+	insertAssetSQL      = `INSERT INTO assets (user_id, stockTag, exchange, price, quantity, IsPurchase) VALUES (?, ?, ?, ?, ?, ?)`
+	selectAssetsSQL     = `SELECT id, stockTag, exchange, price, quantity, isPurchase, name, currentPrice, createdAt, updatedAt FROM assets WHERE user_id = ?`
+	selectMaxUpdateSQL  = `SELECT MAX(updatedAt) FROM assets`
+	distinctStockTagSQL = `SELECT DISTINCT stockTag FROM assets WHERE user_id = ? ORDER BY updatedAt ASC LIMIT 8`
+	updateAssetSQL      = `UPDATE assets SET name = ?, currentPrice = ?, updatedAt = CURRENT_TIMESTAMP WHERE stockTag = ?`
+	deleteAssetSQL      = `DELETE FROM assets WHERE id = ? AND user_id = ?`
+	updateAssetByIDSQL  = `UPDATE assets SET stockTag = ?, exchange = ?, price = ?, quantity = ? WHERE id = ?`
+	selectAPIKeySQL     = `SELECT api_key FROM api_keys WHERE user_id = ?`
+)
 
-	var newAsset models.Asset
-	err := json.NewDecoder(r.Body).Decode(&newAsset)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+func AddAsset(db *sql.DB, w http.ResponseWriter, r *http.Request) {
+	userClaims, ok := r.Context().Value("userClaims").(*models.Claims)
+	if !ok {
+		http.Error(w, "invalid user claims", http.StatusInternalServerError)
 		return
 	}
 
-	insertAssetSQL := `INSERT INTO assets (user_id, stockTag, exchange, price, quantity, IsPurchase) VALUES (?, ?, ?, ?, ?, ?)`
+	var newAsset models.Asset
+	if err := json.NewDecoder(r.Body).Decode(&newAsset); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
 	statement, err := db.Prepare(insertAssetSQL)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "failed to prepare SQL statement", http.StatusInternalServerError)
 		return
 	}
 	defer statement.Close()
 
 	newAsset.IsPurchase = true
-	_, err = statement.Exec(userID, newAsset.StockTag, newAsset.Exchange, newAsset.Price, newAsset.Quantity, newAsset.IsPurchase)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if _, err = statement.Exec(userClaims.UserID, newAsset.StockTag, newAsset.Exchange, newAsset.Price, newAsset.Quantity, newAsset.IsPurchase); err != nil {
+		http.Error(w, "failed to execute SQL statement", http.StatusInternalServerError)
 		return
 	}
 
-	var symbols []string
-	symbols = append(symbols, newAsset.StockTag)
-	updateStockData(db, symbols, userID)
+	updateStockData(db, []string{newAsset.StockTag}, userClaims.UserID)
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(newAsset)
 }
 
-type updateStockRequest struct {
-	Symbols []string `json:"symbols"`
-}
-
 func UpdateSelectedAssets(db *sql.DB, w http.ResponseWriter, r *http.Request) {
-	log.Println("UpdateSelectedAssets")
-	var updateStockRequest updateStockRequest
-	if err := json.NewDecoder(r.Body).Decode(&updateStockRequest); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	var req models.UpdateStockRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	userClaims := r.Context().Value("userClaims").(*models.Claims)
-	userID := userClaims.UserID
 
-	updateStockData(db, updateStockRequest.Symbols, userID)
+	userClaims, ok := r.Context().Value("userClaims").(*models.Claims)
+	if !ok {
+		http.Error(w, "invalid user claims", http.StatusInternalServerError)
+		return
+	}
+
+	updateStockData(db, req.Symbols, userClaims.UserID)
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
 
 func SellAsset(db *sql.DB, w http.ResponseWriter, r *http.Request) {
-	userClaims := r.Context().Value("userClaims").(*models.Claims)
-	userID := userClaims.UserID
-
-	var soldAsset models.Asset
-	err := json.NewDecoder(r.Body).Decode(&soldAsset)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	userClaims, ok := r.Context().Value("userClaims").(*models.Claims)
+	if !ok {
+		http.Error(w, "invalid user claims", http.StatusInternalServerError)
 		return
 	}
 
-	insertAssetSQL := `INSERT INTO assets (stockTag, exchange, price, quantity, IsPurchase) VALUES (?, ?, ?, ?, ?)`
+	var soldAsset models.Asset
+	if err := json.NewDecoder(r.Body).Decode(&soldAsset); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
 	statement, err := db.Prepare(insertAssetSQL)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "failed to prepare SQL statement", http.StatusInternalServerError)
 		return
 	}
 	defer statement.Close()
 
 	soldAsset.IsPurchase = false
-	_, err = statement.Exec(soldAsset.StockTag, soldAsset.Exchange, soldAsset.Price, soldAsset.Quantity, soldAsset.IsPurchase)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if _, err = statement.Exec(userClaims.UserID, soldAsset.StockTag, soldAsset.Exchange, soldAsset.Price, soldAsset.Quantity, soldAsset.IsPurchase); err != nil {
+		http.Error(w, "failed to execute SQL statement", http.StatusInternalServerError)
 		return
 	}
 
-	var symbols []string
-	symbols = append(symbols, soldAsset.StockTag)
-	updateStockData(db, symbols, userID)
+	updateStockData(db, []string{soldAsset.StockTag}, userClaims.UserID)
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(soldAsset)
 }
 
 func GetAssets(db *sql.DB, w http.ResponseWriter, r *http.Request) {
-	userClaims := r.Context().Value("userClaims").(*models.Claims)
-	userID := userClaims.UserID
+	userClaims, ok := r.Context().Value("userClaims").(*models.Claims)
+	if !ok {
+		http.Error(w, "invalid user claims", http.StatusInternalServerError)
+		return
+	}
 
-	updateStockDataIfNeeded(db, userID)
+	updateStockDataIfNeeded(db, userClaims.UserID)
 
-	rows, err := db.Query("SELECT id, stockTag, exchange, price, quantity, isPurchase, name, currentPrice, createdAt, updatedAt FROM assets WHERE user_id = ?", userID)
+	rows, err := db.Query(selectAssetsSQL, userClaims.UserID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "failed to query assets", http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
@@ -121,17 +129,15 @@ func GetAssets(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 	var assets []models.Asset
 	for rows.Next() {
 		var asset models.Asset
-		err := rows.Scan(&asset.ID, &asset.StockTag, &asset.Exchange, &asset.Price, &asset.Quantity, &asset.IsPurchase, &asset.Name, &asset.CurrentPrice, &asset.CreatedAt, &asset.UpdatedAt)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		if err := rows.Scan(&asset.ID, &asset.StockTag, &asset.Exchange, &asset.Price, &asset.Quantity, &asset.IsPurchase, &asset.Name, &asset.CurrentPrice, &asset.CreatedAt, &asset.UpdatedAt); err != nil {
+			http.Error(w, "failed to scan asset row", http.StatusInternalServerError)
 			return
 		}
-
 		assets = append(assets, asset)
 	}
 
-	if err = rows.Err(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if err := rows.Err(); err != nil {
+		http.Error(w, "error iterating over assets rows", http.StatusInternalServerError)
 		return
 	}
 
@@ -139,33 +145,85 @@ func GetAssets(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(assets)
 }
 
-func updateStockDataIfNeeded(db *sql.DB, userID int) {
-	var lastUpdateStr string
-	err := db.QueryRow("SELECT MAX(updatedAt) FROM assets").Scan(&lastUpdateStr)
-	if err != nil {
-		log.Println("Error fetching last update time:", err)
+func UpdateAsset(db *sql.DB, w http.ResponseWriter, r *http.Request) {
+	userClaims, ok := r.Context().Value("userClaims").(*models.Claims)
+	if !ok {
+		http.Error(w, "invalid user claims", http.StatusInternalServerError)
 		return
+	}
+
+	vars := mux.Vars(r)
+	id, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		http.Error(w, "invalid asset ID", http.StatusBadRequest)
+		return
+	}
+
+	var updatedAsset models.Asset
+	if err := json.NewDecoder(r.Body).Decode(&updatedAsset); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if _, err = db.Exec(updateAssetByIDSQL, updatedAsset.StockTag, updatedAsset.Exchange, updatedAsset.Price, updatedAsset.Quantity, id); err != nil {
+		http.Error(w, "failed to execute SQL statement", http.StatusInternalServerError)
+		return
+	}
+
+	updateStockData(db, []string{updatedAsset.StockTag}, userClaims.UserID)
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(updatedAsset)
+}
+
+func DeleteAsset(db *sql.DB, w http.ResponseWriter, r *http.Request) {
+	userClaims, ok := r.Context().Value("userClaims").(*models.Claims)
+	if !ok {
+		http.Error(w, "invalid user claims", http.StatusInternalServerError)
+		return
+	}
+
+	vars := mux.Vars(r)
+	id := vars["id"]
+	if _, err := db.Exec(deleteAssetSQL, id, userClaims.UserID); err != nil {
+		http.Error(w, "failed to execute SQL statement", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprint(w, "Deleted")
+}
+
+func updateStockDataIfNeeded(db *sql.DB, userID int) error {
+	var lastUpdateStr string
+	err := db.QueryRow(selectMaxUpdateSQL).Scan(&lastUpdateStr)
+	if err != nil {
+		return fmt.Errorf("error fetching last update time: %v", err)
 	}
 
 	lastUpdate, err := time.Parse("2006-01-02 15:04:05", lastUpdateStr)
 	if err != nil {
-		log.Println("Error parsing last update time:", err)
-		return
+		return fmt.Errorf("error parsing last update time: %v", err)
 	}
 
 	if time.Since(lastUpdate) >= time.Minute {
-		symbols := getSymbolsToUpdate(db, userID)
+		symbols, err := getSymbolsToUpdate(db, userID)
+		if err != nil {
+			return err
+		}
 		if len(symbols) > 0 {
-			updateStockData(db, symbols, userID)
+			if err := updateStockData(db, symbols, userID); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
-func getSymbolsToUpdate(db *sql.DB, userID int) []string {
-	rows, err := db.Query("SELECT DISTINCT stockTag FROM assets WHERE user_id = ? ORDER BY updatedAt ASC LIMIT 8", userID)
+func getSymbolsToUpdate(db *sql.DB, userID int) ([]string, error) {
+	rows, err := db.Query(distinctStockTagSQL, userID)
 	if err != nil {
-		log.Println("Error fetching symbols for update:", err)
-		return nil
+		return nil, fmt.Errorf("error fetching symbols for update: %v", err)
 	}
 	defer rows.Close()
 
@@ -173,52 +231,35 @@ func getSymbolsToUpdate(db *sql.DB, userID int) []string {
 	for rows.Next() {
 		var stockTag string
 		if err := rows.Scan(&stockTag); err != nil {
-			log.Println("Error scanning stockTag:", err)
-			continue
+			return nil, fmt.Errorf("error scanning stockTag: %v", err)
 		}
 		symbols = append(symbols, stockTag)
 	}
-	return symbols
+	return symbols, nil
 }
 
-func updateStockData(db *sql.DB, symbols []string, userID int) {
+func updateStockData(db *sql.DB, symbols []string, userID int) error {
 	stockData, err := fetchStockDataFromAPI(db, symbols, userID)
-	log.Println("fetchStockDataFromAPI:")
-	log.Println(stockData)
 	if err != nil {
-		log.Println("Error fetching stock data:", err)
-		return
+		return fmt.Errorf("error fetching stock data: %v", err)
 	}
 
 	for _, data := range stockData {
 		if data.Price != "" {
-			updateSQL := `UPDATE assets SET name = ?, currentPrice = ?, updatedAt = CURRENT_TIMESTAMP WHERE stockTag = ?`
-			_, err := db.Exec(updateSQL, data.Name, data.Price, data.Symbol)
-			if err != nil {
-				log.Println("Error updating asset in database:", err)
+			if _, err := db.Exec(updateAssetSQL, data.Name, data.Price, data.Symbol); err != nil {
+				return fmt.Errorf("error updating asset in database: %v", err)
 			}
 		}
 	}
+	return nil
 }
 
-type StockQuote struct {
-	Symbol string `json:"symbol"`
-	Name   string `json:"name"`
-	Price  string `json:"price"`
-}
-
-type StockQuoteApiResponce struct {
-	Symbol string `json:"symbol"`
-	Name   string `json:"name"`
-	Price  string `json:"close"`
-}
-
-func fetchStockDataFromAPI(db *sql.DB, symbols []string, userID int) ([]StockQuote, error) {
+func fetchStockDataFromAPI(db *sql.DB, symbols []string, userID int) ([]models.StockQuote, error) {
 	if len(symbols) == 0 {
 		return nil, nil
 	}
 	var apiKey string
-	err := db.QueryRow("SELECT api_key FROM api_keys WHERE user_id = ?", userID).Scan(&apiKey)
+	err := db.QueryRow(selectAPIKeySQL, userID).Scan(&apiKey)
 	if err != nil {
 		return nil, fmt.Errorf("Error fetching API key: %v", err)
 	}
@@ -243,14 +284,14 @@ func fetchStockDataFromAPI(db *sql.DB, symbols []string, userID int) ([]StockQuo
 	}
 	fmt.Println("API Response:", string(bodyBytes))
 
-	var quotes []StockQuote
+	var quotes []models.StockQuote
 	if len(symbols) == 1 {
-		var quote StockQuoteApiResponce
+		var quote models.StockQuoteApiResponce
 		if err := json.Unmarshal(bodyBytes, &quote); err != nil {
 			return nil, fmt.Errorf("JSON Decode error: %v", err)
 		}
 
-		quotes = append(quotes, StockQuote{
+		quotes = append(quotes, models.StockQuote{
 			Symbol: quote.Symbol,
 			Name:   quote.Name,
 			Price:  quote.Price,
@@ -266,7 +307,7 @@ func fetchStockDataFromAPI(db *sql.DB, symbols []string, userID int) ([]StockQuo
 			if !ok {
 				continue
 			}
-			quotes = append(quotes, StockQuote{
+			quotes = append(quotes, models.StockQuote{
 				Symbol: symbol,
 				Name:   quoteData["name"].(string),
 				Price:  quoteData["close"].(string),
@@ -275,54 +316,4 @@ func fetchStockDataFromAPI(db *sql.DB, symbols []string, userID int) ([]StockQuo
 	}
 
 	return quotes, nil
-}
-
-func DeleteAsset(db *sql.DB, w http.ResponseWriter, r *http.Request) {
-	userClaims := r.Context().Value("userClaims").(*models.Claims)
-	userID := userClaims.UserID
-	vars := mux.Vars(r)
-	id := vars["id"]
-
-	deleteSQL := `DELETE FROM assets WHERE id = ? AND user_id = ?`
-	_, err := db.Exec(deleteSQL, id, userID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, "Deleted")
-}
-
-func UpdateAsset(db *sql.DB, w http.ResponseWriter, r *http.Request) {
-	userClaims := r.Context().Value("userClaims").(*models.Claims)
-	userID := userClaims.UserID
-
-	vars := mux.Vars(r)
-	id, err := strconv.Atoi(vars["id"])
-	if err != nil {
-		http.Error(w, "Invalid asset ID", http.StatusBadRequest)
-		return
-	}
-
-	var updatedAsset models.Asset
-	err = json.NewDecoder(r.Body).Decode(&updatedAsset)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	updateSQL := `UPDATE assets SET stockTag = ?, exchange = ?, price = ?, quantity = ? WHERE id = ?`
-	_, err = db.Exec(updateSQL, updatedAsset.StockTag, updatedAsset.Exchange, updatedAsset.Price, updatedAsset.Quantity, id)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	var symbols []string
-	symbols = append(symbols, updatedAsset.StockTag)
-	updateStockData(db, symbols, userID)
-
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(updatedAsset)
 }

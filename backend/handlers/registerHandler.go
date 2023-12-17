@@ -1,3 +1,5 @@
+// /backend/handlers/registerHandler.go
+
 package handlers
 
 import (
@@ -9,23 +11,26 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+const (
+	insertUserSQL = `INSERT INTO users (username, email, password) VALUES (?, ?, ?)`
+)
+
 func RegisterHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 	var user models.User
-	err := json.NewDecoder(r.Body).Decode(&user)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Failed to hash password", http.StatusInternalServerError)
 		return
 	}
 
-	_, err = db.Exec("INSERT INTO users (username, email, password) VALUES (?, ?, ?)", user.Username, user.Email, hashedPassword)
+	_, err = db.Exec(insertUserSQL, user.Username, user.Email, hashedPassword)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Failed to register user", http.StatusInternalServerError)
 		return
 	}
 
